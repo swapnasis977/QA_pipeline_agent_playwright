@@ -1,0 +1,10 @@
+node_modules/
+context/
+runs/
+workspaces/
+profiles/*/brain/
+.env
+__pycache__/
+.git/
+*.pyc
+.pytest_cache/

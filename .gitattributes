@@ -1,0 +1,3 @@
+# Shell scripts must keep LF line endings or they fail on macOS/Linux (bad interpreter: /bin/bash^M).
+*.sh text eol=lf
+*.ps1 text eol=crlf

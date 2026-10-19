@@ -1,0 +1,26 @@
+{
+  "app": {
+    "screens": [
+      {
+        "name": "Dashboard",
+        "context": "dashboard home screen"
+      },
+      {
+        "name": "Registration",
+        "context": "registration context screen"
+      },
+      {
+        "name": "Capture Device",
+        "context": "registration capture screen"
+      },
+      {
+        "name": "Capture Device (Vendor)",
+        "context": "vendor capture screen"
+      },
+      {
+        "name": "Identification",
+        "context": "identification capture screen"
+      }
+    ]
+  }
+}

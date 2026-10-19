@@ -1,0 +1,23 @@
+{
+  "app": {
+    "base_url": "https://your-app.example.com"
+  },
+  "connectors": {
+    "jira": { "project": "", "issue_type": "Test" }
+  },
+  "gates": {
+    "require_human_review": true,
+    "strict_coverage": false,
+    "allow_crawl": true,
+    "max_repairs": 2
+  },
+  "budgets": {
+    "max_run_tokens": 0,
+    "max_files_per_run": 40,
+    "max_crawls_per_run": 25
+  },
+  "execution": {
+    "workers": null,
+    "allure": true
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "app-dashboard": {
+    "url": "exampleApp/dashboard/home/?customer_code=demo",
+    "aliases": [
+      "dashboard home screen"
+    ],
+    "note": "Map corrected 2026-09-04 against the live DOM: the tile accessible names end in ' module' ('Registration. Click to access Registration module'). The map had them truncated, and _click_route_step matches EXACTLY, so every declared route failed and 3 of 4 screens fell back to keyword navigation."
+  },
+  "registration-context": {
+    "clicks": [
+      "Registration. Click to access Registration module"
+    ],
+    "aliases": [
+      "registration context screen",
+      "context information"
+    ]
+  },
+  "identification-screen": {
+    "clicks": [
+      "Identification. Click to access Identification module"
+    ],
+    "aliases": [
+      "identification capture screen"
+    ]
+  },
+  "manage-identity-screen": {
+    "clicks": [
+      "Manage Identity. Click to access Manage Identity module",
+      "Search for an Identity SubMenu, Click to Access Search for an Identity Page"
+    ],
+    "aliases": [
+      "manage identity search screen"
+    ]
+  },
+  "registration-capture": {
+    "clicks": [
+      "Registration. Click to access Registration module",
+      "css=#transactionType_select",
+      "Member",
+      "css=#btnContinue"
+    ],
+    "aliases": [
+      "registration capture screen",
+      "capture device screen",
+      "biometric capture screen"
+    ]
+  },
+  "registration-capture-vendor": {
+    "clicks": [
+      "Registration. Click to access Registration module",
+      "css=#transactionType_select",
+      "Vendor",
+      "css=#btnContinue"
+    ],
+    "aliases": [
+      "vendor capture screen"
+    ]
+  }
+}

@@ -1,0 +1,160 @@
+# CI for qa-agent-pipeline (GitHub Actions).
+#
+# This uses GitHub Actions because it's the most portable/universally
+# understood CI syntax to ship without knowing which CI provider the user
+# actually runs. The same steps below (checkout, setup Python 3.11, setup
+# Node 20, pip install -e .[dev], ruff/mypy, pytest, then scaffold a
+# workspace and type-check it) translate directly to:
+#   - GitLab CI:      stages + before_script/script blocks, image: python:3.11
+#   - Jenkins:        a declarative Pipeline with stage {} blocks per job below
+#   - Azure Pipelines: a jobs: list with steps: mirroring each step here
+#
+# No provider-specific features (GH-only actions like cache, artifacts) are
+# load-bearing to the pipeline's correctness — they're just speed-ups.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python:
+    name: Python lint, type-check, and tests (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The team works on Windows (PowerShell setup script, profile paths with
+        # spaces were a real problem), and pyproject promises Python >= 3.10, so CI
+        # covers both rather than only the one combination nobody uses.
+        include:
+          - { os: ubuntu-latest, python: "3.11" }
+          - { os: ubuntu-latest, python: "3.10" }
+          - { os: windows-latest, python: "3.11" }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: "pip"
+
+      - name: Install Python dependencies (project + dev extras)
+        # pyproject.toml has a [build-system] table (setuptools), so an
+        # editable install with the "dev" extra pulls in ruff/mypy/pytest
+        # in one shot instead of separately hydrating requirements.txt.
+        run: pip install -e ".[dev]"
+
+      - name: Ruff lint
+        # BLOCKING. The repo is lint-clean, so this is now a gate rather than
+        # a report nobody reads. That matters beyond tidiness: ruff had been
+        # reporting `executor.py: F841 Local variable 'json_report_path' is
+        # assigned to but never used` for as long as the finding existed —
+        # the exact symptom of a closure shadowing bug that crashed every
+        # infra-failure run — and `continue-on-error` is why nobody saw it.
+        # If a rule is wrong for a specific line, silence THAT line with a
+        # `# noqa: <rule>` and a reason (see qa_pipeline/brain/trust.py);
+        # do not re-disable the job.
+        run: ruff check .
+
+      - name: Mypy strict modules (BLOCKING)
+        # The modules listed under [[tool.mypy.overrides]] in pyproject.toml are fully
+        # typed and must stay that way. --follow-imports=silent reports errors in THESE
+        # files only, so the untyped remainder of the codebase cannot fail this step.
+        shell: bash
+        run: >-
+          mypy --follow-imports=silent
+          utils/run_layout.py utils/heal_guard.py utils/runlog.py
+          qa_pipeline/doctor.py qa_pipeline/verifiers/result.py
+          qa_pipeline/verifiers/data_files.py qa_pipeline/verifiers/spec_hygiene.py
+          qa_pipeline/verifiers/coverage_check.py qa_pipeline/verifiers/compile_check.py
+          agents/spec_merge.py agents/pom_builder.py
+
+      - name: Mypy type-check (non-blocking)
+        # Codebase has little/no type annotations yet (see [tool.mypy] in
+        # pyproject.toml) — surfaced for visibility, not enforced yet.
+        continue-on-error: true
+        run: mypy qa_pipeline agents utils
+
+      - name: Pytest
+        shell: bash
+        # BLOCKING. A suite exists now; the "no tests yet" branch below stays
+        # only so a checkout that somehow lacks tests/ says so out loud
+        # rather than passing silently — "nothing ran" must never be
+        # indistinguishable from "everything passed", which is the same
+        # confusion the Executor's own failure_kind exists to prevent.
+        run: |
+          if [ -d tests ]; then
+            pytest
+          else
+            echo "::error::No tests/ directory — nothing was verified by this job."
+            exit 1
+          fi
+
+  scaffold:
+    name: Framework scaffold bootstraps and type-checks
+    runs-on: ubuntu-latest
+    # Replaces the old sample-repo job. There is no committed Playwright repo
+    # any more: the pipeline SCAFFOLDS one per profile, so what CI should
+    # prove is that the scaffold it generates is itself sound — that its
+    # tsconfig, base classes and fixtures compile before a single generated
+    # file is added to them. A broken scaffold makes every generated file
+    # fail the compile gate for a reason that is not the generator's fault.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Set up Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+
+      - name: Install Python dependencies
+        run: pip install -e .
+
+      - name: Scaffold a throwaway workspace
+        run: |
+          python -m qa_pipeline.cli init-profile ci-check
+          python -m qa_pipeline.cli scaffold --profile ci-check
+
+      - name: npm install (generated workspace)
+        working-directory: workspaces/ci-check
+        run: npm install
+
+      - name: TypeScript type-check (no emit)
+        working-directory: workspaces/ci-check
+        run: npx tsc --noEmit
+        # This job intentionally does NOT run any Playwright tests — there is
+        # no live application under test in CI. It only proves the scaffold
+        # the pipeline generates can bootstrap and compile.
+
+  hygiene:
+    name: Repo hygiene (no secrets tracked, image builds)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: No secrets, sessions or archives are tracked
+        # A Playwright login session (.auth/user.json) holds live cookies, .env holds
+        # API keys, and a zip can carry either. This is a cheap, deterministic guard
+        # that fails the build the moment one is committed.
+        run: |
+          bad=$(git ls-files | grep -E '(^|/)\.auth/|(^|/)\.env$|\.storageState\.json$|\.zip$' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::These files must not be committed:"
+            echo "$bad"
+            exit 1
+          fi
+
+      - name: Docker image builds
+        run: docker build -t qa-pipeline:ci .

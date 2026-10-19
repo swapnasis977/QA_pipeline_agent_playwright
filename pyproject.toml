@@ -1,0 +1,133 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qa-agent-pipeline"
+version = "0.1.0"
+description = "Zero-touch QA pipeline: 13 stages (6 model, 7 deterministic) behind 5 zero-LLM verifiers and a knowledge ledger. Nobody writes manual test cases or automation scripts."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.40.0",
+    "openai>=1.40.0",
+    "openpyxl>=3.1.0",
+    "requests>=2.31.0",
+    "python-docx>=1.1.0",
+    "pypdf>=5.0.0",
+    "truststore>=0.9.0",
+    "playwright>=1.48.0",
+    "mcp>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.16.0",
+    "mypy>=2.0.0",
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+qa-pipeline = "qa_pipeline.cli:main"
+
+# qa_pipeline/ (the engine), agents/ and utils/ are the only Python packages.
+# Everything else at repo root — runs/, profiles/, workspaces/, skills/,
+# instructions/ — is data/config/scratch, not importable code, and must NOT
+# be picked up by an auto-discovery build (it would try to package a live
+# run's generated artifacts under runs/ as if they were source).
+[tool.setuptools.packages.find]
+include = ["qa_pipeline*", "agents*", "utils*"]
+
+# ── Ruff: linting + formatting (replaces black/flake8/isort with one tool) ──
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["context", "runs", "output", "profiles", "workspaces", "test-results"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes (unused imports/vars, undefined names)
+    "I",   # isort (import ordering)
+    "UP",  # pyupgrade (modern Python idioms)
+    "B",   # bugbear (common bug patterns)
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",  # line length is a formatter concern, not a lint failure
+    "B008",  # default-arg function calls are used deliberately in a few CLI parsers
+]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ── mypy: type-checking ──
+# Starts LENIENT on purpose: this codebase has no type annotations yet, and
+# turning on strict mode against ~4200 lines of untyped code in one pass
+# would produce hundreds of errors with no triage value. This config is the
+# on-ramp — it catches real errors in code that DOES have hints (return type
+# mismatches, wrong argument types) without demanding hints everywhere yet.
+# Tighten incrementally (module by module, via [[tool.mypy.overrides]]) as
+# annotations get added, rather than flipping it strict repo-wide at once.
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+check_untyped_defs = true
+disallow_untyped_defs = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+exclude = ["context/", "runs/", "output/", "profiles/", "workspaces/", "test-results/"]
+
+# Modules held to a stricter standard: every function declares its types, no implicit
+# Optional, no returning Any. CI BLOCKS on these (see .github/workflows/ci.yml) and only
+# these; the rest of the codebase stays on the lenient settings above until it is brought
+# across. To promote a module: annotate it until `mypy <file>` is clean, add it here AND to
+# the CI file list (tests/test_strict_mypy_modules_are_in_ci.py keeps the two in step).
+[[tool.mypy.overrides]]
+module = [
+    "utils.run_layout",
+    "utils.heal_guard",
+    "utils.runlog",
+    "qa_pipeline.doctor",
+    "qa_pipeline.verifiers.result",
+    "qa_pipeline.verifiers.data_files",
+    "qa_pipeline.verifiers.spec_hygiene",
+    "qa_pipeline.verifiers.coverage_check",
+    "qa_pipeline.verifiers.compile_check",
+    "agents.spec_merge",
+    "agents.pom_builder",
+]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+no_implicit_optional = true
+warn_return_any = true
+
+# ── pytest ──
+# The suite in tests/ is committed and blocking in CI. It is deliberately
+# behaviour-first: each file opens with the real failure it exists to prevent
+# (a crash on the Executor's infra path, a heal blocklisting a fix that
+# worked, a planner repair deleting its own DOM evidence) rather than
+# describing the function it calls.
+#
+# -ra: a short summary of every non-pass at the end, so a skip isn't
+#      invisible — a test that silently skips because node/tsc is missing
+#      must not look identical to one that actually ran and passed.
+# --strict-markers / --strict-config: an unregistered marker or a typo'd
+#      config key fails the run instead of being ignored, which is what
+#      lets a `@pytest.mark.slow` typo silently disable a test.
+# --durations: makes a subprocess-spawning test's real cost visible.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config --durations=5"
+
+markers = [
+    "toolchain: needs an external tool on PATH (node/tsc/npx). A test that needs one should SKIP when it is absent, never fail — an unverifiable check is not a failing check.",
+]
+
+# The pipeline's own code must not raise DeprecationWarning; third-party
+# ones are out of our control. `error::DeprecationWarning:agents.*` would be
+# ideal but module-scoped filters match the warning's ORIGIN module, which
+# for a stdlib deprecation is the stdlib. Surfaced rather than silenced.
+filterwarnings = [
+    "always::DeprecationWarning",
+]
